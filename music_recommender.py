@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -8,6 +10,7 @@ from music_domain import (
     MUSIC_CATALOG,
     encode_track,
     format_track_card,
+    load_catalog_from_csv,
     pick_next_track,
     recommendation_percentage,
 )
@@ -24,11 +27,15 @@ CONTEXTS = ("Surprise me", "Focus", "Workout", "Wind down")
 
 
 def ensure_state() -> None:
+    st.session_state.setdefault("music_catalog", MUSIC_CATALOG)
     st.session_state.setdefault("seen_music_titles", [])
     st.session_state.setdefault("music_index_seed", 0)
     st.session_state.setdefault("music_feedback_history", [])
     st.session_state.setdefault("current_track_bits", [])
-    st.session_state.setdefault("current_track", pick_next_track([], 0))
+    st.session_state.setdefault(
+        "current_track",
+        pick_next_track([], 0, st.session_state.music_catalog),
+    )
 
     if "music_agent" not in st.session_state and ao is not None:
         st.session_state.music_agent = ao.Agent(arch, notes="Music Domain Agent")
@@ -84,6 +91,7 @@ def advance_track() -> None:
     st.session_state.current_track = pick_next_track(
         st.session_state.seen_music_titles,
         st.session_state.music_index_seed,
+        st.session_state.music_catalog,
     )
 
 
@@ -98,7 +106,39 @@ ensure_state()
 
 with st.sidebar:
     st.write("## Music Dataset")
-    st.write(f"{len(MUSIC_CATALOG)} sample tracks")
+    st.write(f"{len(st.session_state.music_catalog)} tracks loaded")
+
+    uploaded_catalog = st.file_uploader(
+        "Use a custom music CSV",
+        type=["csv"],
+        help=(
+            "Required columns: title, artist, genres, tempo_bpm, energy, "
+            "release_year, vocal, summary. Separate multiple genres with semicolons."
+        ),
+    )
+    if uploaded_catalog is not None:
+        uploaded_bytes = uploaded_catalog.getvalue()
+        catalog_hash = hashlib.sha256(uploaded_bytes).hexdigest()
+        if catalog_hash != st.session_state.get("music_catalog_hash"):
+            try:
+                st.session_state.music_catalog = load_catalog_from_csv(
+                    uploaded_bytes.decode("utf-8-sig")
+                )
+                st.session_state.music_catalog_hash = catalog_hash
+                st.session_state.seen_music_titles = []
+                st.session_state.music_index_seed = 0
+                st.session_state.music_feedback_history = []
+                st.session_state.current_track = pick_next_track(
+                    [],
+                    0,
+                    st.session_state.music_catalog,
+                )
+                st.success(f"Loaded {len(st.session_state.music_catalog)} tracks")
+            except UnicodeDecodeError:
+                st.error("CSV must be UTF-8 encoded.")
+            except ValueError as exc:
+                st.error(str(exc))
+
     if ao is None:
         st.warning(
             "AO packages are not installed, so the app is using a deterministic local response. "

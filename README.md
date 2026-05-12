@@ -60,6 +60,15 @@ with:
 python -m unittest discover -s tests
 ```
 
+The sidebar can also load a custom CSV catalog, which makes the demo reusable
+for a real music dataset instead of only the bundled sample tracks. The CSV
+must include:
+
+```csv
+title,artist,genres,tempo_bpm,energy,release_year,vocal,summary
+City Lights,Example Artist,electronic;pop,118,8,2024,no,Bright synth pulse
+```
+
 
 ### Docker Installation
 
@@ -88,5 +97,4 @@ The recommender system works by loading a set of random video links. Once the us
 ## Contributing
 
 Fork the repository, make your changes, and submit a pull request for review. 
-
 

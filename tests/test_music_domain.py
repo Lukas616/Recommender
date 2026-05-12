@@ -4,6 +4,7 @@ from music_domain import (
     MUSIC_CATALOG,
     encode_track,
     format_track_card,
+    load_catalog_from_csv,
     pick_next_track,
     recommendation_percentage,
 )
@@ -38,6 +39,28 @@ class MusicDomainTests(unittest.TestCase):
         first = MUSIC_CATALOG[0]
         picked = pick_next_track([first.title], 0)
         self.assertNotEqual(picked.title, first.title)
+
+    def test_pick_next_track_accepts_custom_catalog(self):
+        csv_text = """title,artist,genres,tempo_bpm,energy,release_year,vocal,summary
+Test Track,Example Artist,pop;rock,101,5,2026,yes,Demo summary
+Second Track,Example Artist,jazz,88,3,2025,no,Another summary
+"""
+        catalog = load_catalog_from_csv(csv_text)
+        picked = pick_next_track([catalog[0].title], 0, catalog)
+        self.assertEqual(picked.title, catalog[1].title)
+
+    def test_load_catalog_from_csv_validates_required_columns(self):
+        with self.assertRaises(ValueError):
+            load_catalog_from_csv("title,artist\nMissing,Columns\n")
+
+    def test_load_catalog_from_csv_parses_binary_features(self):
+        csv_text = """title,artist,genres,tempo_bpm,energy,release_year,vocal,summary
+CSV Track,CSV Artist,electronic;pop,128,8,2024,instrumental,Upload-ready record
+"""
+        catalog = load_catalog_from_csv(csv_text)
+        self.assertEqual(catalog[0].genres, ("electronic", "pop"))
+        self.assertFalse(catalog[0].vocal)
+        self.assertEqual(len(encode_track(catalog[0], "Focus")), 11)
 
     def test_format_track_card_contains_key_fields(self):
         track = MUSIC_CATALOG[0]

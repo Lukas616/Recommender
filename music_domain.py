@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
+from io import StringIO
 from typing import Iterable, List, Sequence, Tuple
 
 
@@ -33,6 +35,18 @@ class TrackCandidate:
     release_year: int
     vocal: bool
     summary: str
+
+
+CSV_REQUIRED_COLUMNS = (
+    "title",
+    "artist",
+    "genres",
+    "tempo_bpm",
+    "energy",
+    "release_year",
+    "vocal",
+    "summary",
+)
 
 
 MUSIC_CATALOG: Tuple[TrackCandidate, ...] = (
@@ -159,6 +173,77 @@ MUSIC_CATALOG: Tuple[TrackCandidate, ...] = (
 )
 
 
+def _parse_bool(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "vocal"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "instrumental"}:
+        return False
+    raise ValueError(f"invalid vocal value: {value!r}")
+
+
+def _parse_genres(value: str) -> Tuple[str, ...]:
+    delimiter = ";" if ";" in value else "|" if "|" in value else ","
+    genres = tuple(
+        genre.strip().lower()
+        for genre in value.split(delimiter)
+        if genre.strip()
+    )
+    if not genres:
+        raise ValueError("genres must include at least one genre")
+    return genres
+
+
+def load_catalog_from_csv(csv_text: str) -> Tuple[TrackCandidate, ...]:
+    reader = csv.DictReader(StringIO(csv_text.strip()))
+    if not reader.fieldnames:
+        raise ValueError("CSV must include a header row")
+
+    normalized_fields = {field.strip().lower() for field in reader.fieldnames}
+    missing = [column for column in CSV_REQUIRED_COLUMNS if column not in normalized_fields]
+    if missing:
+        raise ValueError(f"CSV is missing required columns: {', '.join(missing)}")
+
+    tracks: list[TrackCandidate] = []
+    for row_number, row in enumerate(reader, start=2):
+        normalized_row = {
+            (key or "").strip().lower(): (value or "").strip()
+            for key, value in row.items()
+        }
+        try:
+            title = normalized_row["title"]
+            artist = normalized_row["artist"]
+            if not title or not artist:
+                raise ValueError("title and artist are required")
+
+            tempo_bpm = int(normalized_row["tempo_bpm"])
+            energy = int(normalized_row["energy"])
+            release_year = int(normalized_row["release_year"])
+            if tempo_bpm <= 0:
+                raise ValueError("tempo_bpm must be positive")
+            if energy < 0 or energy > 10:
+                raise ValueError("energy must be between 0 and 10")
+
+            tracks.append(
+                TrackCandidate(
+                    title=title,
+                    artist=artist,
+                    genres=_parse_genres(normalized_row["genres"]),
+                    tempo_bpm=tempo_bpm,
+                    energy=energy,
+                    release_year=release_year,
+                    vocal=_parse_bool(normalized_row["vocal"]),
+                    summary=normalized_row["summary"],
+                )
+            )
+        except ValueError as exc:
+            raise ValueError(f"row {row_number}: {exc}") from exc
+
+    if not tracks:
+        raise ValueError("CSV must include at least one track")
+    return tuple(tracks)
+
+
 def to_bits(value: int, width: int) -> List[int]:
     if value < 0:
         raise ValueError("value must be non-negative")
@@ -227,10 +312,16 @@ def recommendation_percentage(agent_output: Sequence[int]) -> int:
     return round((positive / len(agent_output)) * 100)
 
 
-def pick_next_track(seen_titles: Iterable[str], index_seed: int = 0) -> TrackCandidate:
+def pick_next_track(
+    seen_titles: Iterable[str],
+    index_seed: int = 0,
+    catalog: Sequence[TrackCandidate] = MUSIC_CATALOG,
+) -> TrackCandidate:
+    if not catalog:
+        raise ValueError("catalog must include at least one track")
     seen = set(seen_titles)
-    unseen = [track for track in MUSIC_CATALOG if track.title not in seen]
-    candidates = unseen or list(MUSIC_CATALOG)
+    unseen = [track for track in catalog if track.title not in seen]
+    candidates = unseen or list(catalog)
     return candidates[index_seed % len(candidates)]
 
 
